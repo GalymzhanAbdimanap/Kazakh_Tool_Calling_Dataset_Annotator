@@ -672,7 +672,7 @@ if page == "Аннотация":
     st.header("📝 Аннотирование")
     
     col_m1, col_m2, col_m3 = st.columns([2, 1, 2])
-    category = col_m1.selectbox("Категория", ["tool_awareness", "planning_multistep", "api_discovery", "argument_schema"])
+    category = col_m1.selectbox("Категория", ["01_tool_awareness_abstention", "02_tool_selection_disambiguation", "03_planning_multistep_composition", "04_api_discovery_retrieval", "05_argument_schema_mapping", "06_state_session_context", "07_tool_output_interpretation", "08_exception_failure_handling", "09_final_answer_synthesis", "10_multilingual_locale_fidelity"])
     difficulty = col_m2.selectbox("Сложность", ["easy", "hard"])
     
     # Генерация ID
