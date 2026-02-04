@@ -633,25 +633,55 @@ def validate_entry(tool_name, args_json, out_json, tool_lib):
     return errors
 
 def update_tool_template(step_id):
-    """
-    Вызывается ТОЛЬКО при изменении значения в selectbox.
-    """
     tool_key = f"tool_select_{step_id}"
     selected_tool = st.session_state.get(tool_key)
     lib = get_tool_library()
     
-    # Если выбран реальный инструмент, заполняем шаблонами
     if selected_tool and selected_tool in lib:
-        # Принудительно обновляем ключи, привязанные к text_area
+        # 1. Заполняем аргументы
         st.session_state[f"args_{step_id}"] = json.dumps(
             {k: "" for k in lib[selected_tool]['parameters']}, 
-            indent=2, 
-            ensure_ascii=False
+            indent=2, ensure_ascii=False
         )
+        
+        # 2. При смене инструмента сбрасываем состояние ошибки на False (опционально)
+        # Если вы хотите, чтобы галочка слетала при выборе нового тула:
+        st.session_state[f"is_err_{step_id}"] = False 
+        
+        # 3. Заполняем Output нормальным ответом
         st.session_state[f"output_{step_id}"] = json.dumps(
             lib[selected_tool].get('mock_response', {}), 
-            indent=2, 
-            ensure_ascii=False
+            indent=2, ensure_ascii=False
+        )
+
+def toggle_error_state(step_id):
+    """
+    Переключает JSON в поле Output между Mock-ответом и шаблоном Ошибки
+    при нажатии на чекбокс.
+    """
+    # Получаем состояние галочки
+    is_error = st.session_state.get(f"is_err_{step_id}", False)
+    
+    # Получаем текущий выбранный инструмент, чтобы знать, какой mock вернуть при отключении ошибки
+    tool_key = f"tool_select_{step_id}"
+    selected_tool = st.session_state.get(tool_key)
+    lib = get_tool_library()
+    
+    if is_error:
+        # 🔴 Если галочка включена -> ставим шаблон ошибки
+        error_template = {
+            "error": True,
+            "type": "InternalServerError", # Можно менять на ValueError, TimeoutError
+            "message": "External service is unavailable",
+            "code": 500
+        }
+        st.session_state[f"output_{step_id}"] = json.dumps(error_template, indent=2, ensure_ascii=False)
+    
+    elif selected_tool and selected_tool in lib:
+        # 🟢 Если галочку сняли -> возвращаем нормальный mock от инструмента
+        st.session_state[f"output_{step_id}"] = json.dumps(
+            lib[selected_tool].get('mock_response', {}), 
+            indent=2, ensure_ascii=False
         )
 
 # --- АВТОРИЗАЦИЯ ---
@@ -694,7 +724,24 @@ if page == "Аннотация":
     st.header("📝 Аннотирование")
     
     col_m1, col_m2, col_m3 = st.columns([2, 1, 2])
-    category = col_m1.selectbox("Категория", ["01_tool_awareness_abstention", "02_tool_selection_disambiguation", "03_planning_multistep_composition", "04_api_discovery_retrieval", "05_argument_schema_mapping", "06_state_session_context", "07_tool_output_interpretation", "08_exception_failure_handling", "09_final_answer_synthesis", "10_multilingual_locale_fidelity"])
+    # category = col_m1.selectbox("Категория", ["01_tool_awareness_abstention", "02_tool_selection_disambiguation", "03_planning_multistep_composition", "04_api_discovery_retrieval", "05_argument_schema_mapping", "06_state_session_context", "07_tool_output_interpretation", "08_exception_failure_handling", "09_final_answer_synthesis", "10_multilingual_locale_fidelity"])
+    category = col_m1.selectbox(
+    "Категория", 
+    [
+        "01_tool_awareness_abstention", 
+        "02_tool_selection_disambiguation", 
+        "03_planning_multistep_composition", 
+        "04_api_discovery_retrieval", 
+        "05_argument_schema_mapping",    # <-- Целевая категория
+        "06_state_session_context", 
+        "07_tool_output_interpretation", 
+        "08_exception_failure_handling", # <-- Целевая категория
+        "09_final_answer_synthesis", 
+        "10_multilingual_locale_fidelity"
+    ],
+    key="current_category" # Важно для callback-функции
+    )
+    
     difficulty = col_m2.selectbox("Сложность", ["easy", "hard"])
     
     # Генерация ID
@@ -727,7 +774,7 @@ if page == "Аннотация":
             st.caption(f"ШАГ {i+1}")
             cp, ct, cs = st.columns(3)
             
-            s_plan = cp.text_input("Assistant Plan(Meta)", key=f"plan_{step['id']}")
+            s_plan = cp.text_input("Assistant Plan(Meta на англ)", key=f"plan_{step['id']}")
             s_thought = ct.text_input("Мысль ассистента(на казахском)", key=f"thought_{step['id']}")
             
             # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
@@ -740,18 +787,33 @@ if page == "Аннотация":
                 on_change=update_tool_template,  # Вызов функции при смене
                 kwargs={"step_id": step['id']}   # Передача ID шага
             )
-            
-            # Инициализация пустых полей, если их еще нет в State (первый запуск)
-            if f"args_{step['id']}" not in st.session_state:
-                st.session_state[f"args_{step['id']}"] = "{}"
-            if f"output_{step['id']}" not in st.session_state:
-                st.session_state[f"output_{step['id']}"] = "{}"
+            if s_tool != "(Нет вызова)":
+                cs.checkbox(
+                    "⚠️ Симуляция ошибки API", 
+                    key=f"is_err_{step['id']}",
+                    on_change=toggle_error_state, # При клике вызываем функцию
+                    kwargs={"step_id": step['id']}
+                )
+
+            # Инициализация ключей (если их нет)
+            if f"args_{step['id']}" not in st.session_state: st.session_state[f"args_{step['id']}"] = "{}"
+            if f"output_{step['id']}" not in st.session_state: st.session_state[f"output_{step['id']}"] = "{}"
 
             ca, co = st.columns(2)
-            # Text Area просто читает и пишет в тот же ключ. 
-            # Конфликта больше нет, так как programmatiс update происходит только в callback.
             s_args = ca.text_area("Arguments (JSON)", key=f"args_{step['id']}", height=120)
             s_out = co.text_area("Output (JSON)", key=f"output_{step['id']}", height=120)
+            
+            # # Инициализация пустых полей, если их еще нет в State (первый запуск)
+            # if f"args_{step['id']}" not in st.session_state:
+            #     st.session_state[f"args_{step['id']}"] = "{}"
+            # if f"output_{step['id']}" not in st.session_state:
+            #     st.session_state[f"output_{step['id']}"] = "{}"
+
+            # ca, co = st.columns(2)
+            # # Text Area просто читает и пишет в тот же ключ. 
+            # # Конфликта больше нет, так как programmatiс update происходит только в callback.
+            # s_args = ca.text_area("Arguments (JSON)", key=f"args_{step['id']}", height=120)
+            # s_out = co.text_area("Output (JSON)", key=f"output_{step['id']}", height=120)
 
             if s_tool != "(Нет вызова)":
                 errs = validate_entry(s_tool, s_args, s_out, lib)
