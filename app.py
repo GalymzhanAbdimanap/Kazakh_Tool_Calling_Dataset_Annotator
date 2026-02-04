@@ -632,6 +632,28 @@ def validate_entry(tool_name, args_json, out_json, tool_lib):
     except: return ["Ошибка формата JSON"]
     return errors
 
+def update_tool_template(step_id):
+    """
+    Вызывается ТОЛЬКО при изменении значения в selectbox.
+    """
+    tool_key = f"tool_select_{step_id}"
+    selected_tool = st.session_state.get(tool_key)
+    lib = get_tool_library()
+    
+    # Если выбран реальный инструмент, заполняем шаблонами
+    if selected_tool and selected_tool in lib:
+        # Принудительно обновляем ключи, привязанные к text_area
+        st.session_state[f"args_{step_id}"] = json.dumps(
+            {k: "" for k in lib[selected_tool]['parameters']}, 
+            indent=2, 
+            ensure_ascii=False
+        )
+        st.session_state[f"output_{step_id}"] = json.dumps(
+            lib[selected_tool].get('mock_response', {}), 
+            indent=2, 
+            ensure_ascii=False
+        )
+
 # --- АВТОРИЗАЦИЯ ---
 if not st.session_state['logged_in']:
     st.title("🔐 Вход")
@@ -704,21 +726,30 @@ if page == "Аннотация":
         with st.container(border=True):
             st.caption(f"ШАГ {i+1}")
             cp, ct, cs = st.columns(3)
-            # Привязка через ключи гарантирует возможность программной очистки
+            
             s_plan = cp.text_input("Assistant Plan(Meta)", key=f"plan_{step['id']}")
             s_thought = ct.text_input("Мысль ассистента(на казахском)", key=f"thought_{step['id']}")
-            s_tool = cs.selectbox("Инструмент", ["(Нет вызова)"] + sel_tools, key=f"tool_select_{step['id']}")
             
-            # Автозаполнение шаблонов
-            pk = f"prev_tool_{step['id']}"
-            if st.session_state.get(pk) != s_tool:
-                st.session_state[pk] = s_tool
-                if s_tool != "(Нет вызова)":
-                    st.session_state[f"args_{step['id']}"] = json.dumps({k: "" for k in lib[s_tool]['parameters']}, indent=2, ensure_ascii=False)
-                    st.session_state[f"output_{step['id']}"] = json.dumps(lib[s_tool].get('mock_response', {}), indent=2, ensure_ascii=False)
-                st.rerun()
+            # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+            # Убрали проверку "if st.session_state.get(pk) != s_tool:"
+            # Добавили on_change и kwargs
+            s_tool = cs.selectbox(
+                "Инструмент", 
+                ["(Нет вызова)"] + sel_tools, 
+                key=f"tool_select_{step['id']}",
+                on_change=update_tool_template,  # Вызов функции при смене
+                kwargs={"step_id": step['id']}   # Передача ID шага
+            )
+            
+            # Инициализация пустых полей, если их еще нет в State (первый запуск)
+            if f"args_{step['id']}" not in st.session_state:
+                st.session_state[f"args_{step['id']}"] = "{}"
+            if f"output_{step['id']}" not in st.session_state:
+                st.session_state[f"output_{step['id']}"] = "{}"
 
             ca, co = st.columns(2)
+            # Text Area просто читает и пишет в тот же ключ. 
+            # Конфликта больше нет, так как programmatiс update происходит только в callback.
             s_args = ca.text_area("Arguments (JSON)", key=f"args_{step['id']}", height=120)
             s_out = co.text_area("Output (JSON)", key=f"output_{step['id']}", height=120)
 
