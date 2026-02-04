@@ -442,8 +442,10 @@ def get_tool_library():
                 "function": {"type": "string", "description": "Function name", "required": True}
             },
             "mock_response": {
-                "service": "",
-                "doc_content": ""
+                "parameters": {
+
+                },
+                "required": []
             }
         },
         # === АНАЛИЗ ТЕКСТА ===
