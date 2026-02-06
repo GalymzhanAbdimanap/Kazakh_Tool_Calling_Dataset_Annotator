@@ -756,17 +756,23 @@ if page == "Аннотация":
     lib = get_tool_library()
     sel_tools = st.multiselect("Доступные инструменты", list(lib.keys()), key="selected_tools")
 
-    # --- УПРАВЛЕНИЕ ШАГАМИ ---
+    # --- УПРАВЛЕНИЕ ШАГАМИ (ИСПРАВЛЕНО) ---
     st.subheader("⚙️ Процесс решения")
-    c_add, c_rem = st.columns([1, 8])
-    if c_add.button("➕ Добавить шаг"):
+
+    # Определяем функции-колбэки
+    def add_step_callback():
         st.session_state['tool_steps'].append({"id": st.session_state['step_counter']})
         st.session_state['step_counter'] += 1
-        st.rerun()
-    if c_rem.button("➖ Удалить шаг"):
+
+    def remove_step_callback():
         if len(st.session_state['tool_steps']) > 1:
             st.session_state['tool_steps'].pop()
-            st.rerun()
+
+    c_add, c_rem = st.columns([1, 8])
+    
+    # Используем on_click вместо проверки if button и st.rerun()
+    c_add.button("➕ Добавить шаг", on_click=add_step_callback)
+    c_rem.button("➖ Удалить шаг", on_click=remove_step_callback)
 
     steps_data = []
     global_errors = []
