@@ -640,47 +640,29 @@ def update_tool_template(step_id):
     lib = get_tool_library()
     
     if selected_tool and selected_tool in lib:
-        # 1. Заполняем аргументы
         st.session_state[f"args_{step_id}"] = json.dumps(
             {k: "" for k in lib[selected_tool]['parameters']}, 
             indent=2, ensure_ascii=False
         )
-        
-        # 2. При смене инструмента сбрасываем состояние ошибки на False (опционально)
-        # Если вы хотите, чтобы галочка слетала при выборе нового тула:
         st.session_state[f"is_err_{step_id}"] = False 
-        
-        # 3. Заполняем Output нормальным ответом
         st.session_state[f"output_{step_id}"] = json.dumps(
             lib[selected_tool].get('mock_response', {}), 
             indent=2, ensure_ascii=False
         )
 
 def toggle_error_state(step_id):
-    """
-    Переключает JSON в поле Output между Mock-ответом и шаблоном Ошибки
-    при нажатии на чекбокс.
-    """
-    # Получаем состояние галочки
     is_error = st.session_state.get(f"is_err_{step_id}", False)
-    
-    # Получаем текущий выбранный инструмент, чтобы знать, какой mock вернуть при отключении ошибки
     tool_key = f"tool_select_{step_id}"
     selected_tool = st.session_state.get(tool_key)
     lib = get_tool_library()
     
     if is_error:
-        # 🔴 Если галочка включена -> ставим шаблон ошибки
         error_template = {
-            "error": True,
-            "type": "InternalServerError", # Можно менять на ValueError, TimeoutError
-            "message": "External service is unavailable",
-            "code": 500
+            "error": True, "type": "InternalServerError",
+            "message": "External service is unavailable", "code": 500
         }
         st.session_state[f"output_{step_id}"] = json.dumps(error_template, indent=2, ensure_ascii=False)
-    
     elif selected_tool and selected_tool in lib:
-        # 🟢 Если галочку сняли -> возвращаем нормальный mock от инструмента
         st.session_state[f"output_{step_id}"] = json.dumps(
             lib[selected_tool].get('mock_response', {}), 
             indent=2, ensure_ascii=False
@@ -701,22 +683,22 @@ if not st.session_state['logged_in']:
     st.stop()
 
 # --- ОСНОВНОЙ ИНТЕРФЕЙС ---
-page = st.sidebar.radio("Навигация", ["Аннотация", "Экспорт"])
+# Добавлен пункт "Редактирование"
+page = st.sidebar.radio("Навигация", ["Аннотация", "Редактирование", "Экспорт"])
 if st.sidebar.button("Выйти"):
     st.session_state['logged_in'] = False
     st.rerun()
 
+# ==========================================
+# 1. СТРАНИЦА: АННОТАЦИЯ
+# ==========================================
 if page == "Аннотация":
-    # --- ЛОГИКА ГАРАНТИРОВАННОЙ ОЧИСТКИ ---
     if st.session_state.get('need_reset'):
-        # Очищаем все ключи динамических шагов
         for key in list(st.session_state.keys()):
             if any(key.startswith(p) for p in ("plan_", "thought_", "tool_select_", "args_", "output_", "prev_tool_")):
                 if "tool_select" in key: st.session_state[key] = "(Нет вызова)"
                 elif "args" in key or "output" in key: st.session_state[key] = "{}"
                 else: st.session_state[key] = ""
-        
-        # Сброс основных полей
         st.session_state.update({
             'user_query': "", 'selected_tools': [], 'final_answer': "",
             'tool_steps': [{"id": 0}], 'step_counter': 1, 'need_reset': False
@@ -726,27 +708,10 @@ if page == "Аннотация":
     st.header("📝 Аннотирование")
     
     col_m1, col_m2, col_m3 = st.columns([2, 1, 2])
-    # category = col_m1.selectbox("Категория", ["01_tool_awareness_abstention", "02_tool_selection_disambiguation", "03_planning_multistep_composition", "04_api_discovery_retrieval", "05_argument_schema_mapping", "06_state_session_context", "07_tool_output_interpretation", "08_exception_failure_handling", "09_final_answer_synthesis", "10_multilingual_locale_fidelity"])
-    category = col_m1.selectbox(
-    "Категория", 
-    [
-        "01_tool_awareness_abstention", 
-        "02_tool_selection_disambiguation", 
-        "03_planning_multistep_composition", 
-        "04_api_discovery_retrieval", 
-        "05_argument_schema_mapping",    # <-- Целевая категория
-        "06_state_session_context", 
-        "07_tool_output_interpretation", 
-        "08_exception_failure_handling", # <-- Целевая категория
-        "09_final_answer_synthesis", 
-        "10_multilingual_locale_fidelity"
-    ],
-    key="current_category" # Важно для callback-функции
-    )
-    
+    cat_list = ["01_tool_awareness_abstention", "02_tool_selection_disambiguation", "03_planning_multistep_composition", "04_api_discovery_retrieval", "05_argument_schema_mapping", "06_state_session_context", "07_tool_output_interpretation", "08_exception_failure_handling", "09_final_answer_synthesis", "10_multilingual_locale_fidelity"]
+    category = col_m1.selectbox("Категория", cat_list, key="current_category")
     difficulty = col_m2.selectbox("Сложность", ["easy", "hard"])
     
-    # Генерация ID
     if 'cur_id' not in st.session_state or st.session_state.get('last_cat') != category:
         st.session_state['cur_id'] = f"kk_{category}_{datetime.now().strftime('%m%d_%H%M')}"
         st.session_state['last_cat'] = category
@@ -756,10 +721,8 @@ if page == "Аннотация":
     lib = get_tool_library()
     sel_tools = st.multiselect("Доступные инструменты", list(lib.keys()), key="selected_tools")
 
-    # --- УПРАВЛЕНИЕ ШАГАМИ (ИСПРАВЛЕНО) ---
     st.subheader("⚙️ Процесс решения")
 
-    # Определяем функции-колбэки
     def add_step_callback():
         st.session_state['tool_steps'].append({"id": st.session_state['step_counter']})
         st.session_state['step_counter'] += 1
@@ -769,8 +732,6 @@ if page == "Аннотация":
             st.session_state['tool_steps'].pop()
 
     c_add, c_rem = st.columns([1, 8])
-    
-    # Используем on_click вместо проверки if button и st.rerun()
     c_add.button("➕ Добавить шаг", on_click=add_step_callback)
     c_rem.button("➖ Удалить шаг", on_click=remove_step_callback)
 
@@ -785,43 +746,16 @@ if page == "Аннотация":
             s_plan = cp.text_input("Assistant Plan(Meta на англ)", key=f"plan_{step['id']}")
             s_thought = ct.text_input("Мысль ассистента(на казахском)", key=f"thought_{step['id']}")
             
-            # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
-            # Убрали проверку "if st.session_state.get(pk) != s_tool:"
-            # Добавили on_change и kwargs
-            s_tool = cs.selectbox(
-                "Инструмент", 
-                ["(Нет вызова)"] + sel_tools, 
-                key=f"tool_select_{step['id']}",
-                on_change=update_tool_template,  # Вызов функции при смене
-                kwargs={"step_id": step['id']}   # Передача ID шага
-            )
+            s_tool = cs.selectbox("Инструмент", ["(Нет вызова)"] + sel_tools, key=f"tool_select_{step['id']}", on_change=update_tool_template, kwargs={"step_id": step['id']})
             if s_tool != "(Нет вызова)":
-                cs.checkbox(
-                    "⚠️ Симуляция ошибки API", 
-                    key=f"is_err_{step['id']}",
-                    on_change=toggle_error_state, # При клике вызываем функцию
-                    kwargs={"step_id": step['id']}
-                )
+                cs.checkbox("⚠️ Симуляция ошибки API", key=f"is_err_{step['id']}", on_change=toggle_error_state, kwargs={"step_id": step['id']})
 
-            # Инициализация ключей (если их нет)
             if f"args_{step['id']}" not in st.session_state: st.session_state[f"args_{step['id']}"] = "{}"
             if f"output_{step['id']}" not in st.session_state: st.session_state[f"output_{step['id']}"] = "{}"
 
             ca, co = st.columns(2)
             s_args = ca.text_area("Arguments (JSON)", key=f"args_{step['id']}", height=120)
             s_out = co.text_area("Output (JSON)", key=f"output_{step['id']}", height=120)
-            
-            # # Инициализация пустых полей, если их еще нет в State (первый запуск)
-            # if f"args_{step['id']}" not in st.session_state:
-            #     st.session_state[f"args_{step['id']}"] = "{}"
-            # if f"output_{step['id']}" not in st.session_state:
-            #     st.session_state[f"output_{step['id']}"] = "{}"
-
-            # ca, co = st.columns(2)
-            # # Text Area просто читает и пишет в тот же ключ. 
-            # # Конфликта больше нет, так как programmatiс update происходит только в callback.
-            # s_args = ca.text_area("Arguments (JSON)", key=f"args_{step['id']}", height=120)
-            # s_out = co.text_area("Output (JSON)", key=f"output_{step['id']}", height=120)
 
             if s_tool != "(Нет вызова)":
                 errs = validate_entry(s_tool, s_args, s_out, lib)
@@ -838,7 +772,6 @@ if page == "Аннотация":
         elif sample_id in get_existing_ids():
             st.error("Этот ID уже существует!")
         else:
-            # Сборка структуры диалога
             turns = [{"role": "user", "content": query}]
             ans_list = []
             for s in steps_data:
@@ -854,7 +787,7 @@ if page == "Аннотация":
             with sqlite3.connect(DB_FILE) as conn:
                 conn.execute('INSERT INTO annotations VALUES (?,?,?,?,?,?,?,?,?)', 
                              (sample_id, category, difficulty, query, 
-                              json.dumps([lib[n] for n in sel_tools], ensure_ascii=False),
+                              json.dumps([lib[n] for n in sel_tools if n in lib], ensure_ascii=False),
                               json.dumps(ans_list, ensure_ascii=False),
                               json.dumps(turns, ensure_ascii=False),
                               st.session_state['username'], datetime.now()))
@@ -864,7 +797,189 @@ if page == "Аннотация":
             st.cache_data.clear()
             st.rerun()
 
-# --- СТРАНИЦА ЭКСПОРТА И ГРАФИКОВ (FIXED) ---
+# ==========================================
+# 2. СТРАНИЦА: РЕДАКТИРОВАНИЕ (НОВОЕ)
+# ==========================================
+elif page == "Редактирование":
+    st.header("✏️ Редактирование записей")
+    
+    with sqlite3.connect(DB_FILE) as conn:
+        df = pd.read_sql_query("SELECT id, category, created_at FROM annotations ORDER BY created_at DESC", conn)
+        
+    if df.empty:
+        st.info("В базе данных пока нет записей для редактирования.")
+    else:
+        # Выбор записи
+        options = df['id'].tolist()
+        selected_edit_id = st.selectbox("Выберите ID записи для исправления", options)
+        
+        # Кнопка загрузки парсит сохраненный JSON и восстанавливает шаги
+        if st.button("🔄 Загрузить данные в редактор"):
+            with sqlite3.connect(DB_FILE) as conn:
+                rec = conn.execute("SELECT * FROM annotations WHERE id = ?", (selected_edit_id,)).fetchone()
+            
+            turns = json.loads(rec[6]) # turns_json
+            tools_loaded = [t['name'] for t in json.loads(rec[4])] # Выбранные тулы
+            
+            st.session_state['edit_loaded_id'] = selected_edit_id
+            st.session_state['e_query'] = rec[3]
+            st.session_state['e_cat'] = rec[1]
+            st.session_state['e_diff'] = rec[2]
+            st.session_state['e_sel_tools'] = tools_loaded
+            st.session_state['e_final'] = turns[-1]['content'] if turns and turns[-1]['role'] == 'assistant' and 'tool_call' not in turns[-1] else ""
+            
+            # Логика восстановления шагов из списка Turns
+            middle_turns = turns[1:-1] if len(turns) > 2 else []
+            if not middle_turns and len(turns) == 2 and 'tool_call' not in turns[1]: 
+                middle_turns = []
+                
+            steps = []
+            cur = {"plan": "", "thought": "", "tool": "(Нет вызова)", "args": "{}", "output": "{}"}
+            
+            for t in middle_turns:
+                if t["role"] == "assistant" and "content" in t and "tool_call" not in t:
+                    # Если уже есть заполненный тул или мысль, закрываем шаг
+                    if cur["thought"] or cur["tool"] != "(Нет вызова)":
+                        steps.append(cur)
+                        cur = {"plan": "", "thought": "", "tool": "(Нет вызова)", "args": "{}", "output": "{}"}
+                    cur["thought"] = t.get("content", "")
+                    cur["plan"] = t.get("meta", {}).get("plan", "")
+                elif t["role"] == "assistant" and "tool_call" in t:
+                    cur["tool"] = t["tool_call"]["name"]
+                    cur["args"] = json.dumps(t["tool_call"]["arguments"], indent=2, ensure_ascii=False)
+                elif t["role"] == "tool":
+                    cur["output"] = t.get("content", "{}")
+                    steps.append(cur)
+                    cur = {"plan": "", "thought": "", "tool": "(Нет вызова)", "args": "{}", "output": "{}"}
+                    
+            # Добавление незаконченного шага (если цикл кончился на Thought)
+            # if any(v for k,v in cur.items() if k not in ['args', 'output'] and v) or cur["tool"] != "(Нет вызова)":
+            #     steps.append(cur)
+            if cur["plan"] or cur["thought"] or cur["tool"] != "(Нет вызова)":
+                steps.append(cur)
+                
+            if not steps: 
+                steps = [{"plan": "", "thought": "", "tool": "(Нет вызова)", "args": "{}", "output": "{}"}]
+            
+            st.session_state['edit_tool_steps'] = [{"id": f"e{i}"} for i in range(len(steps))]
+            st.session_state['edit_step_counter'] = len(steps)
+            
+            # Заполняем Session State для отрисовки полей
+            for i, s_data in enumerate(steps):
+                sid = f"e{i}"
+                st.session_state[f"plan_{sid}"] = s_data["plan"]
+                st.session_state[f"thought_{sid}"] = s_data["thought"]
+                st.session_state[f"tool_select_{sid}"] = s_data["tool"]
+                st.session_state[f"args_{sid}"] = s_data["args"]
+                st.session_state[f"output_{sid}"] = s_data["output"]
+                st.session_state[f"is_err_{sid}"] = False
+            
+            st.rerun()
+
+        # --- ОТРИСОВКА ФОРМЫ РЕДАКТИРОВАНИЯ ---
+        if st.session_state.get('edit_loaded_id') == selected_edit_id:
+            st.divider()
+            
+            col_m1, col_m2 = st.columns(2)
+            cat_list = ["01_tool_awareness_abstention", "02_tool_selection_disambiguation", "03_planning_multistep_composition", "04_api_discovery_retrieval", "05_argument_schema_mapping", "06_state_session_context", "07_tool_output_interpretation", "08_exception_failure_handling", "09_final_answer_synthesis", "10_multilingual_locale_fidelity"]
+            
+            try: cat_idx = cat_list.index(st.session_state['e_cat'])
+            except: cat_idx = 0
+            e_cat = col_m1.selectbox("Категория", cat_list, index=cat_idx)
+            
+            diff_list = ["easy", "hard"]
+            try: diff_idx = diff_list.index(st.session_state['e_diff'])
+            except: diff_idx = 0
+            e_diff = col_m2.selectbox("Сложность", diff_list, index=diff_idx)
+            
+            e_query = st.text_area("Запрос пользователя", value=st.session_state.get('e_query', ''), height=80)
+            
+            lib = get_tool_library()
+            e_sel_tools = st.multiselect("Доступные инструменты", list(lib.keys()), default=st.session_state.get('e_sel_tools', []))
+            
+            st.subheader("⚙️ Процесс решения (Редактирование)")
+            
+            def edit_add_step():
+                new_id = f"e{st.session_state['edit_step_counter']}"
+                st.session_state['edit_tool_steps'].append({"id": new_id})
+                st.session_state['edit_step_counter'] += 1
+
+            def edit_rem_step():
+                if len(st.session_state['edit_tool_steps']) > 1:
+                    st.session_state['edit_tool_steps'].pop()
+
+            c_add, c_rem = st.columns([1, 8])
+            c_add.button("➕ Добавить шаг", on_click=edit_add_step, key="btn_e_add")
+            c_rem.button("➖ Удалить шаг", on_click=edit_rem_step, key="btn_e_rem")
+            
+            edit_steps_data = []
+            e_global_errors = []
+            
+            for i, step in enumerate(st.session_state['edit_tool_steps']):
+                sid = step['id']
+                with st.container(border=True):
+                    st.caption(f"ШАГ {i+1}")
+                    cp, ct, cs = st.columns(3)
+                    
+                    e_plan = cp.text_input("Assistant Plan", value=st.session_state.get(f"plan_{sid}", ""), key=f"plan_{sid}")
+                    e_thought = ct.text_input("Мысль ассистента", value=st.session_state.get(f"thought_{sid}", ""), key=f"thought_{sid}")
+                    
+                    tool_val = st.session_state.get(f"tool_select_{sid}", "(Нет вызова)")
+                    try: tool_idx = (["(Нет вызова)"] + e_sel_tools).index(tool_val)
+                    except: tool_idx = 0
+                    
+                    e_tool = cs.selectbox("Инструмент", ["(Нет вызова)"] + e_sel_tools, index=tool_idx, key=f"tool_select_{sid}", on_change=update_tool_template, kwargs={"step_id": sid})
+                    
+                    if e_tool != "(Нет вызова)":
+                        cs.checkbox("⚠️ Симуляция ошибки API", value=st.session_state.get(f"is_err_{sid}", False), key=f"is_err_{sid}", on_change=toggle_error_state, kwargs={"step_id": sid})
+                    
+                    ca, co = st.columns(2)
+                    e_args = ca.text_area("Arguments (JSON)", value=st.session_state.get(f"args_{sid}", "{}"), key=f"args_{sid}", height=120)
+                    e_out = co.text_area("Output (JSON)", value=st.session_state.get(f"output_{sid}", "{}"), key=f"output_{sid}", height=120)
+                    
+                    if e_tool != "(Нет вызова)":
+                        errs = validate_entry(e_tool, e_args, e_out, lib)
+                        for e in errs: st.error(e)
+                        e_global_errors.extend(errs)
+                        
+                    edit_steps_data.append({"tool": e_tool, "args": e_args, "output": e_out, "plan": e_plan, "thought": e_thought})
+                    
+            e_final = st.text_area("Итоговый ответ", value=st.session_state.get('e_final', ''), key="e_final_text")
+            
+            if st.button("💾 ОБНОВИТЬ В БД", type="primary", use_container_width=True):
+                if e_global_errors or not e_query or not e_final:
+                    st.error("Ошибка! Проверьте JSON и заполните все поля.")
+                else:
+                    turns = [{"role": "user", "content": e_query}]
+                    ans_list = []
+                    for s in edit_steps_data:
+                        if s['plan'] or s['thought']:
+                            turns.append({"role": "assistant", "content": s['thought'], "meta": {"plan": s['plan']}})
+                        if s['tool'] != "(Нет вызова)":
+                            a_o = json.loads(s['args'])
+                            turns.append({"role": "assistant", "tool_call": {"name": s['tool'], "arguments": a_o}})
+                            turns.append({"role": "tool", "content": s['output']})
+                            ans_list.append({"name": s['tool'], "arguments": a_o})
+                    turns.append({"role": "assistant", "content": e_final})
+
+                    with sqlite3.connect(DB_FILE) as conn:
+                        conn.execute('''
+                            UPDATE annotations 
+                            SET category=?, difficulty=?, query=?, tools_json=?, answers_json=?, turns_json=?
+                            WHERE id=?
+                        ''', (e_cat, e_diff, e_query, 
+                              json.dumps([lib[n] for n in e_sel_tools if n in lib], ensure_ascii=False),
+                              json.dumps(ans_list, ensure_ascii=False),
+                              json.dumps(turns, ensure_ascii=False),
+                              selected_edit_id))
+                    
+                    st.success("✅ Запись успешно обновлена!")
+                    st.session_state.pop('edit_loaded_id', None)
+                    st.cache_data.clear()
+
+# ==========================================
+# 3. СТРАНИЦА: ЭКСПОРТ
+# ==========================================
 elif page == "Экспорт":
     st.header("📊 Статистика")
     with sqlite3.connect(DB_FILE) as conn:
@@ -879,7 +994,6 @@ elif page == "Экспорт":
             st.bar_chart(df['category'].value_counts())
         with c2:
             st.write("**Статистика по сложности**")
-            # Вместо pie_chart используем таблицу с процентами (более надежно для старых версий)
             diff_stats = df['difficulty'].value_counts().reset_index()
             diff_stats.columns = ['Сложность', 'Кол-во']
             diff_stats['Процент'] = (diff_stats['Кол-во'] / diff_stats['Кол-во'].sum() * 100).round(1).astype(str) + '%'
